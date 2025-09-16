@@ -1,11 +1,265 @@
-<html>
-  <head>
-    <title>WEB</title>
-  </head>
-  <body>
-    This is DEVOPS 
-    <h1>
-      Hiiii
-    </h1>
-  </body>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mock Online Banking — Voice Enabled</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--glass:rgba(255,255,255,0.03)}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#071028 0%, #07172b 100%);color:#e6eef6;display:flex;align-items:center;justify-content:center;padding:24px}
+    .container{width:100%;max-width:1000px;background:var(--card);border-radius:12px;padding:20px;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+    header{display:flex;align-items:center;gap:16px}
+    .brand{font-weight:700;font-size:1.25rem;color:var(--accent)}
+    .grid{display:grid;grid-template-columns:320px 1fr;gap:18px;margin-top:18px}
+    .panel{background:var(--glass);padding:14px;border-radius:10px}
+    .account{padding:10px;border-radius:8px;margin-bottom:10px;background:linear-gradient(90deg, rgba(255,255,255,0.02), transparent)}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;color:inherit;cursor:pointer}
+    .actions{display:flex;gap:8px;margin-top:10px}
+    input,select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+    .log{height:160px;overflow:auto;background:rgba(0,0,0,0.2);padding:8px;border-radius:6px;font-size:13px}
+    .balance{font-size:1.1rem;font-weight:600}
+    .small{font-size:13px;color:var(--muted)}
+    .status{display:inline-block;padding:6px 10px;border-radius:999px;font-weight:600}
+    .status.listening{background:rgba(6,182,212,0.12);color:var(--accent);border:1px solid rgba(6,182,212,0.16)}
+    .note{font-size:12px;color:var(--muted);margin-top:8px}
+    .transactions{max-height:260px;overflow:auto;margin-top:8px}
+    .tx{padding:8px;border-bottom:1px dashed rgba(255,255,255,0.02);display:flex;justify-content:space-between}
+    footer{margin-top:12px;color:var(--muted);font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="container" role="application" aria-label="Mock online banking with voice commands">
+    <header>
+      <div class="brand">Aurora Bank — Voice Demo</div>
+      <div class="small">(mock UI — not for production)</div>
+      <div style="margin-left:auto;text-align:right">
+        <div id="voiceStatus" class="status small">Voice: Not supported</div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <aside class="panel" aria-labelledby="accountsHeading">
+        <h3 id="accountsHeading">Accounts</h3>
+        <div id="accountsList"></div>
+
+        <div class="note">Try voice commands: <em>"check balance"</em>, <em>"show transactions"</em>, <em>"transfer 250 to savings"</em>, <em>"logout"</em>.</div>
+        <div style="margin-top:10px">
+          <button id="btnStart">Start Voice</button>
+          <button id="btnStop" disabled>Stop Voice</button>
+        </div>
+
+        <div style="margin-top:12px">
+          <label class="small">Manual transfer</label>
+          <input id="amountInput" placeholder="Amount" type="number" />
+          <select id="toAccount">
+            <option value="savings">Savings</option>
+            <option value="checking">Checking</option>
+            <option value="credit">Credit</option>
+          </select>
+          <div class="actions"><button id="btnTransfer">Transfer</button><button id="btnRefresh">Refresh</button></div>
+        </div>
+      </aside>
+
+      <main class="panel" aria-live="polite">
+        <h3>Dashboard</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="small">Welcome back, <strong>Harshii</strong></div>
+            <div class="balance" id="totalBalance">Total balance: ₹0</div>
+          </div>
+          <div>
+            <div id="recognizedText" class="small">Last command: —</div>
+            <div id="lastAction" class="small" style="margin-top:6px"></div>
+          </div>
+        </div>
+
+        <section style="margin-top:12px">
+          <h4>Transactions</h4>
+          <div class="transactions" id="transactions"></div>
+        </section>
+
+        <section style="margin-top:12px">
+          <h4>System Log</h4>
+          <div class="log" id="log"></div>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      <div>Notes: This is a client-side mock demonstrating the Web Speech API. For real banking: use secure servers, HTTPS, strong auth, input validation, rate limits, and never run sensitive operations purely on client-side scripts.</div>
+    </footer>
+  </div>
+
+  <script>
+    // Mock user data (for demo only)
+    const state = {
+      accounts: {
+        checking: {name: 'Checking', balance: 4200.50},
+        savings: {name: 'Savings', balance: 15000.00},
+        credit: {name: 'Credit', balance: -1200.00}
+      },
+      transactions: [
+        {date: '2025-09-10', desc: 'Salary', amount: 20000},
+        {date: '2025-09-11', desc: 'Grocery', amount: -1500},
+        {date: '2025-09-12', desc: 'Utilities', amount: -320}
+      ]
+    }
+
+    // UI helpers
+    const $ = id => document.getElementById(id)
+    function renderAccounts(){
+      const el = $('accountsList'); el.innerHTML=''
+      for(const key of Object.keys(state.accounts)){
+        const a = state.accounts[key]
+        const div = document.createElement('div'); div.className='account'
+        div.innerHTML = `<div style=\"display:flex;justify-content:space-between;align-items:center\"><div><strong>${a.name}</strong><div class=\"small\">${key}</div></div><div class=\"small\">₹${a.balance.toFixed(2)}</div></div>`
+        el.appendChild(div)
+      }
+      const total = Object.values(state.accounts).reduce((s,x)=>s+x.balance,0)
+      $('totalBalance').textContent = `Total balance: ₹${total.toFixed(2)}`
+    }
+
+    function renderTransactions(){
+      const el = $('transactions'); el.innerHTML=''
+      state.transactions.slice().reverse().forEach(tx=>{
+        const div = document.createElement('div'); div.className='tx'
+        div.innerHTML = `<div><div>${tx.desc}</div><div class=\"small\">${tx.date}</div></div><div>₹${tx.amount.toFixed(2)}</div>`
+        el.appendChild(div)
+      })
+    }
+
+    function log(msg){
+      const l = $('log'); const p=document.createElement('div'); p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`; l.appendChild(p); l.scrollTop = l.scrollHeight
+    }
+
+    // Transfer function (client-side mock)
+    function transfer(amount, toKey){
+      amount = Number(amount)
+      if(isNaN(amount) || amount <= 0) { log('Invalid transfer amount'); return }
+      // take from checking by default
+      const from = state.accounts.checking
+      if(from.balance < amount){ log('Insufficient funds'); return }
+      from.balance -= amount
+      state.accounts[toKey].balance += amount
+      state.transactions.push({date:new Date().toISOString().slice(0,10), desc:`Transfer to ${state.accounts[toKey].name}`, amount:-amount})
+      state.transactions.push({date:new Date().toISOString().slice(0,10), desc:`Transfer from Checking to ${state.accounts[toKey].name}`, amount: amount})
+      renderAccounts(); renderTransactions(); log(`Transferred ₹${amount.toFixed(2)} to ${state.accounts[toKey].name}`)
+    }
+
+    // Voice recognition (Web Speech API) — best on Chrome/Edge
+    let recognition = null
+    let listening = false
+
+    function setupSpeech(){
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      if(!SpeechRecognition) {
+        $('voiceStatus').textContent = 'Voice: Not supported in this browser'
+        log('SpeechRecognition API not supported')
+        return
+      }
+      recognition = new SpeechRecognition()
+      recognition.lang = 'en-IN'
+      recognition.interimResults = false
+      recognition.maxAlternatives = 1
+
+      recognition.addEventListener('start', ()=>{
+        listening = true; $('voiceStatus').textContent='Voice: Listening'; $('voiceStatus').classList.add('listening'); $('btnStart').disabled=true; $('btnStop').disabled=false; log('Voice started')
+      })
+      recognition.addEventListener('end', ()=>{
+        listening = false; $('voiceStatus').textContent='Voice: Idle'; $('voiceStatus').classList.remove('listening'); $('btnStart').disabled=false; $('btnStop').disabled=true; log('Voice stopped')
+      })
+      recognition.addEventListener('result', (e)=>{
+        const transcript = e.results[0][0].transcript.trim()
+        $('recognizedText').textContent = `Last command: "${transcript}"`
+        log(`Recognized: ${transcript}`)
+        handleCommand(transcript.toLowerCase())
+      })
+      recognition.addEventListener('error', (ev)=>{
+        log('Voice error: '+ev.error)
+      })
+      $('voiceStatus').textContent='Voice: Ready'
+    }
+
+    function startVoice(){ if(recognition && !listening) recognition.start() }
+    function stopVoice(){ if(recognition && listening) recognition.stop() }
+
+    // Basic command parsing
+    function handleCommand(text){
+      // help
+      if(/help|what can you do/.test(text)){
+        log('Available voice commands: check balance, show transactions, transfer {amount} to {savings/checking/credit}, logout, refresh')
+        return
+      }
+
+      if(/check balance|what is my balance|balance/.test(text)){
+        const lines = Object.keys(state.accounts).map(k=>`${state.accounts[k].name}: ₹${state.accounts[k].balance.toFixed(2)}`)
+        log('Balances — ' + lines.join(' | '))
+        return
+      }
+
+      if(/show transactions|recent transactions|show my transactions/.test(text)){
+        renderTransactions(); log('Displayed recent transactions')
+        return
+      }
+
+      // transfer: parse amount and target
+      const transferMatch = text.match(/transfer\s+(?:rupees\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:to)?\s*(checking|savings|credit)/)
+      if(transferMatch){
+        const amt = Number(transferMatch[1].replace(',','.'))
+        const target = transferMatch[2]
+        log(`Command: transfer ₹${amt} → ${target}`)
+        transfer(amt, target)
+        return
+      }
+
+      // alternative phrasing: pay X to Y (simple)
+      const payMatch = text.match(/pay\s+(?:rupees\s*)?(\d+(?:[.,]\d{1,2})?)\s*(to)\s*(\w+)/)
+      if(payMatch){
+        const amt = Number(payMatch[1].replace(',','.'))
+        const payee = payMatch[3]
+        // this mock will just deduct from checking
+        if(state.accounts.checking.balance >= amt){
+          state.accounts.checking.balance -= amt
+          state.transactions.push({date:new Date().toISOString().slice(0,10), desc:`Paid ${payee}`, amount:-amt})
+          renderAccounts(); renderTransactions(); log(`Paid ₹${amt.toFixed(2)} to ${payee}`)
+        } else log('Insufficient funds for payment')
+        return
+      }
+
+      if(/logout|sign out/.test(text)){
+        log('User requested logout — (mock)'); $('lastAction').textContent='Logged out (mock)'
+        return
+      }
+
+      if(/refresh/.test(text)){
+        renderAccounts(); renderTransactions(); log('Refreshed UI')
+        return
+      }
+
+      log('Command not recognized — try "help" for a list of commands')
+    }
+
+    // Wire up buttons
+    document.addEventListener('DOMContentLoaded', ()=>{
+      renderAccounts(); renderTransactions(); setupSpeech();
+      $('btnStart').addEventListener('click', ()=>{ startVoice() })
+      $('btnStop').addEventListener('click', ()=>{ stopVoice() })
+      $('btnTransfer').addEventListener('click', ()=>{
+        const amt = $('amountInput').value; const to = $('toAccount').value
+        transfer(amt,to)
+      })
+      $('btnRefresh').addEventListener('click', ()=>{ renderAccounts(); renderTransactions(); log('Manual refresh') })
+    })
+
+    // Accessibility: allow keyboard to trigger voice
+    document.addEventListener('keydown', (e)=>{
+      if(e.key === 'v' && (e.ctrlKey || e.metaKey)){
+        // Ctrl/Cmd + V toggles voice
+        if(listening) stopVoice(); else startVoice()
+      }
+    })
+
+  </script>
+</body>
 </html>
